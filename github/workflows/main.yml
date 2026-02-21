@@ -1,0 +1,65 @@
+name: Build Android APK
+on:
+  push:
+    paths:
+      - 'project.zip'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Cordova and dependencies
+        run: npm install -g cordova
+
+      - name: Extract Project
+        run: |
+          mkdir source
+          unzip project.zip -d source
+          
+      - name: Create Cordova Project and Generate Config
+        run: |
+          # Extract variables from the JSON file sent by the IDE
+          APP_NAME=$(jq -r '.appName // "MyMobileApp"' source/apk_settings.json)
+          PKG_NAME=$(jq -r '.packageName // "com.example.app"' source/apk_settings.json)
+          
+          # Create the project
+          cordova create build_dir "$PKG_NAME" "$APP_NAME"
+          cd build_dir
+          cordova platform add android
+          
+          # Copy source files to Cordova's www folder
+          rm -rf www/*
+          cp -r ../source/* www/
+          
+          # Ensure there is an index.html in the root of www
+          if [ ! -f "www/index.html" ]; then
+            echo "<html><body><h1>Index.html not found!</h1></body></html>" > www/index.html
+          fi
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+
+      - name: Build APK
+        run: |
+          cd build_dir
+          cordova build android --debug --device
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: App-Debug-APK
+          path: build_dir/platforms/android/app/build/outputs/apk/debug/app-debug.apk
